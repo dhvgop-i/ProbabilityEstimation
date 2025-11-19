@@ -332,9 +332,201 @@ They behave almost identically in the simulations:
     Method 3 removes θ from the formula, but it gives nearly the same coverage as Method 2 and produces slightly longer intervals.
 
 
+## Problem 2
+
+Poisson distribution: $X_i \sim Pois(\theta)$
+
+Part 2: Normal approximation using true theta in SE.
+
+We approximate the sample mean $X$ using a normal distribution:
+
+$$
+X \sim N(\mu, \sigma^2)
+$$
+
+where:
+
+-   $\mu = \theta$
+-   $\sigma^2 = \frac{s^2}{n}$
+-   $s^2 = \theta^2$ (population variance of $\text{Exp}(\lambda)$)
+
+We define the standardized statistic:
+
+$$
+Z := \frac{\sqrt{n}(X - \theta)}{\theta}
+$$
+
+Since $Z \approx N(0,1)$, we get:
+
+$$
+P(|\theta - X| \le z_{\beta} \frac{\theta}{\sqrt{n}}) = P(|Z| \le z_{\beta}) = 2\beta - 1.
+$$
+
+So we conclude that with probability $2\beta - 1$, the true parameter $\theta$ lies within: $$X \pm z_{\beta}\frac{\theta}{\sqrt{n}}.
+> $$
+
+```{r}
+ci2_poisson <- function(x, alpha, theta_true) {
+  n <- length(x)
+  xbar <- mean(x)
+  z <- qnorm(1 - alpha/2)
+  half_len <- z * sqrt(theta_true / n)
+  c(xbar - half_len, xbar + half_len)
+}
+```
+
+Part 3: Rearranged inequality**.** Solving the Inequality for $\theta$.
+
+Since the interval above still depends on the unknown $\theta$, we solve the inequality:
+
+$$
+|\theta - X| \le z_{\beta}\frac{\theta}{\sqrt{n}}
+$$
+
+for $\theta$.
+
+This yields a new confidence interval with the same confidence level $2\beta - 1$, but importantly:
+
+This rewritten interval **does not depend on the unknown parameter** $\theta$.
+
+```{r}
+ci3_poisson <- function(x, alpha) {
+  n <- length(x)
+  xbar <- mean(x)
+  z <- qnorm(1 - alpha/2)
+  delta <- z / sqrt(n)
+  B <- 2 * xbar + delta^2
+  disc <- B^2 - 4 * xbar^2
+  if (disc < 0) return(c(NA, NA))
+  sqrt_disc <- sqrt(disc)
+  lower <- (B - sqrt_disc) / 2
+  upper <- (B + sqrt_disc) / 2
+  lower <- max(lower, 0)
+  c(lower, upper)
+}
+```
+
+Part 4: Using Student's t-Distribution.
+
+A more general and practical way to eliminate the dependence on $\theta$ is to estimate the population standard deviation using the **sample standard deviation**.
+
+Then, instead of using the normal approximation, we use the **Student t-distribution**.
+
+```{r}
+ci4_poisson <- function(x, alpha) {
+  n <- length(x)
+  xbar <- mean(x)
+  s <- sd(x)
+  tcritical <- qt(1 - alpha/2, df = n - 1)
+  half_len <- tcritical * s / sqrt(n)
+  c(xbar - half_len, xbar + half_len)
+}
+```
+
+Simulation:
+
+```{r}
+simulate_one <- function(n, alpha, m_reps) {
+  cover <- numeric(3)
+  lengths <- numeric(3)
+  
+  for (m in 1:m_reps) {
+    x <- rpois(n, lambda = theta_true)
+    
+    # method 2
+    ci2 <- ci2_poisson(x, alpha, theta_true)
+    cover[1]  <- cover[1]  + (ci2[1] <= theta_true && theta_true <= ci2[2])
+    lengths[1] <- lengths[1] + diff(ci2)
+    
+    # method 3
+    ci3 <- ci3_poisson(x, alpha)
+    if (!any(is.na(ci3))) {
+      cover[2]  <- cover[2]  + (ci3[1] <= theta_true && theta_true <= ci3[2])
+      lengths[2] <- lengths[2] + diff(ci3)
+    } else {
+      # If CI doesn't exist (rare for these params), count it as NOT covering and skip length.
+      # (This matches pragmatic behavior: no interval -> we don't add length, coverage not incremented.)
+    }
+    
+    # method 4
+    ci4 <- ci4_poisson(x, alpha)
+    cover[3]  <- cover[3]  + (ci4[1] <= theta_true && theta_true <= ci4[2])
+    lengths[3] <- lengths[3] + diff(ci4)
+  }
+  
+  data.frame(
+    n = n,
+    alpha = alpha,
+    m_reps = m_reps,
+    Method = c("Normal_trueVar","Rearranged","T_sampleSD"),
+    Coverage = cover / m_reps,
+    AvgLength = lengths / m_reps,
+    stringsAsFactors = FALSE
+  )
+}
 
 
+results_poisson <- data.frame()
+for (alpha in alphas) {
+  for (n in n_vals) {
+    for (m_reps in m_vals) {
+      res <- simulate_one(n, alpha, m_reps)
+      results_poisson <- rbind(results_poisson, res)
+    }
+  }
+}
 
+
+results_poisson$Coverage <- round(results_poisson$Coverage, 4)
+results_poisson$AvgLength <- round(results_poisson$AvgLength, 4)
+
+
+print(results_poisson)
+```
+
+#### (a) Coverage Probability
+
+The aim of this part was to check whether the constructed confidence intervals of level $1 - \alpha$ contain the true parameter $\theta = \frac{1}{\lambda}$ approximately $100(1 - \alpha)\%$ of the time. Based on the simulation results, the following patterns are observed:
+
+-   When the sample size is very small (like $n = 5$):
+    -   The **Normal** and **Rearranged** confidence intervals tend to slightly *overcover*, meaning their empirical coverage is above the nominal level.
+    -   The **t-based confidence interval** shows noticeably lower coverage (≈ 85–88%), indicating that it misses the true parameter more often than expected.
+-   For moderate sample sizes **(**$n = 10$ to $n = 30$):
+    -   All methods begin approaching the nominal confidence level.
+    -   The gap between them becomes smaller.
+-   For larger sample sizes **(**$n \ge 100$):
+    -   All three methods stabilize and achieve coverage close to the target level.
+    -   Differences become minimal and are mostly due to simulation variation.
+
+Overall, the empirical coverage improves as the sample size increases, and the Normal-based methods perform more reliably for smaller samples.
+
+#### (b) Comparison of Precision
+
+To evaluate precision, the average lengths of the confidence intervals were compared. The results indicate:
+
+-   For very small samples, the ranking is:
+
+    1.  **Normal CI** → shortest (best precision)
+    2.  **Rearranged CI** → slightly wider
+    3.  **t-based CI** → widest (least precise)
+
+-   As the sample size increases, all interval types become shorter.
+
+-   For $n \ge 30$, the differences in interval length between methods become much smaller.
+
+In summary, the Normal method provides the narrowest intervals and therefore the best precision, especially when the sample size is small.
+
+#### (c) Recommendation
+
+Based on both coverage probability and interval length:
+
+-   The **Normal and Rearranged confidence intervals** show good performance overall and remain reliable even with small sample sizes.
+-   The **t-based confidence interval** tends to underperform for small samples due to wider intervals and lower empirical coverage. However, it becomes competitive when the sample size is sufficiently large.
+
+**Final Recommendation:**
+
+-   For small samples ($n \le 10$), the **Normal-based methods** (Normal and Rearranged) are preferable.
+-   For **moderate or large samples (**$n \ge 30$), all three methods perform adequately, but the Normal method may be preferred due to slightly shorter interval lengths.
 
 
 # Part 2, Problem 3
