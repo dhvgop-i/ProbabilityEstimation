@@ -1,9 +1,341 @@
 ---
-title: "R Notebook"
+title: 'Lab 3'
+author: "Alina Bodnar, Anastasiia Yosypiv, Ivan Maksymchuk"
 output:
   html_document:
     df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
 ---
+
+## Work breakdown:
+
+-   Alina Bodnar - Problem 1
+
+-   Anastasiia Yosypiv - Problem 2
+
+-   Ivan Maksymchuk - Problem 3
+
+## Part 1
+
+### Problem 1
+
+#### Problem formulation
+
+In this problem we work with i.i.d. samples X1,…,Xn from an exponential distribution Exp(λ), whose mean is E[X]=1/λ=θ.
+For this task, the true parameter is set to θ=id_num/10=1.7.
+The sample mean Xˉ is a natural estimate of θ.
+
+The goal of the task is to compare four different ways of constructing a confidence interval for θ, and to check using simulations whether these intervals actually contain the true parameter with probability close to the chosen confidence level 1−α.
+To study this properly, we vary the sample size n∈{5,10,30,100}, the confidence level α∈{0.1,0.05,0.01}, and the number of repetitions m∈{100,1000,5000}.
+This allows us to examine how well each method performs in terms of empirical coverage and how long the resulting intervals are.
+
+```{r}
+id_num <- 17
+set.seed(id_num)
+theta_true <- id_num / 10
+lambda_true <- 1 / theta_true
+alphas <- c(0.1, 0.05, 0.01)
+n_vals <- c(5, 10, 30, 100)
+m_vals <- c(100, 1000, 5000)  
+```
+
+```{r}
+# 1: exact chi-square-based confidence interval
+ci1_theta <- function(x, alpha) {
+  n <- length(x)
+  xbar <- mean(x)
+  chi_low <- qchisq(alpha / 2, df = 2 * n)       # χ²_{α/2, 2n}
+  chi_up  <- qchisq(1 - alpha / 2, df = 2 * n)   # χ²_{1-α/2, 2n}
+  lower <- 2 * n * xbar / chi_up
+  upper <- 2 * n * xbar / chi_low
+  c(lower, upper)
+}
+
+```
+
+```{r}
+# 2: normal approximation with known variance (uses true θ)
+ci2_theta <- function(x, alpha, theta_true) {
+  n <- length(x)
+  xbar <- mean(x)
+  z <- qnorm(1 - alpha / 2)
+  half_len <- z * theta_true / sqrt(n)
+  c(xbar - half_len, xbar + half_len)
+}
+```
+
+```{r}
+# 3: rearranged inequality (no θ inside)
+ci3_theta <- function(x, alpha) {
+  n <- length(x)
+  xbar <- mean(x)
+  z <- qnorm(1 - alpha / 2)
+  c <- z / sqrt(n)
+  
+  if (c >= 1) {
+    return(c(NA, NA))
+  }
+  
+  lower <- xbar / (1 + c)
+  upper <- xbar / (1 - c)
+  c(lower, upper)
+}
+```
+
+```{r}
+# 4: t-approximation with sample standard deviation
+ci4_theta <- function(x, alpha) {
+  n <- length(x)
+  xbar <- mean(x)
+  s <- sd(x)
+  tcritical <- qt(1 - alpha / 2, df = n - 1)
+  half_len <- tcritical * s / sqrt(n)
+  c(xbar - half_len, xbar + half_len)
+}
+```
+
+```{r}
+#simulation for one scenario
+simulate_one <- function(n, alpha, m_reps) {
+  cover <- numeric(4) #cover[i] counts how many times method contains the true θ
+  lengths <- numeric(4) #lengths[i] adds up all the interval lengths from a method
+  
+  for (m in 1:m_reps) {
+    x <- rexp(n, rate = lambda_true)
+    
+    # method 1
+    ci1 <- ci1_theta(x, alpha)
+    cover[1]  <- cover[1]  + (ci1[1] <= theta_true && theta_true <= ci1[2])
+    lengths[1] <- lengths[1] + diff(ci1)
+    
+    # method 2
+    ci2 <- ci2_theta(x, alpha, theta_true)
+    cover[2]  <- cover[2]  + (ci2[1] <= theta_true && theta_true <= ci2[2])
+    lengths[2] <- lengths[2] + diff(ci2)
+    
+    # method 3
+    ci3 <- ci3_theta(x, alpha)
+    if (!any(is.na(ci3))) {
+      cover[3]  <- cover[3]  + (ci3[1] <= theta_true && theta_true <= ci3[2])
+      lengths[3] <- lengths[3] + diff(ci3)
+    }
+    
+    # method 4
+    ci4 <- ci4_theta(x, alpha)
+    cover[4]  <- cover[4]  + (ci4[1] <= theta_true && theta_true <= ci4[2])
+    lengths[4] <- lengths[4] + diff(ci4)
+  }
+  
+  data.frame(
+    n = n,
+    alpha = alpha,
+    m_reps = m_reps,
+    Method = 1:4,
+    Coverage = cover / m_reps,
+    AvgLength = lengths / m_reps
+  )
+}
+```
+
+```{r}
+#runs the simulation for all (n, α, m)
+results <- data.frame()
+
+for (alpha in alphas) {
+  for (n in n_vals) {
+    for (m_reps in m_vals) {
+      res <- simulate_one(n, alpha, m_reps)
+      results <- rbind(results, res)
+    }
+  }
+}
+results
+```
+
+### Analysis
+
+**Coverage Accuracy**
+
+The goal of the simulation was to check whether each confidence interval method contains the true parameter θ=1.7 with probability approximately equal to the nominal level 1−α
+
+Across all sample sizes and confidence levels, the results show:
+
+Method 1— Highly accurate
+
+-   Coverage is consistently very close to the target value.\
+    For example:
+
+    -   α = 0.10: coverage ≈ 0.90–0.93
+
+    -   α = 0.05: coverage ≈ 0.94–0.97
+
+    -   α = 0.01: coverage ≈ 0.98–1.00
+
+        This holds even when **n = 5**, confirming that Method 1’s exactness does not depend on asymptotics.
+
+**Method 2** — Acceptable, improves with n
+
+-   Overcoverage appears for small n (n=5, α=0.10 → 0.92–0.93 rather than 0.90).
+
+-   But for n ≥ 30 the coverage is close to nominal.
+
+**Method 3 (Rearranged inequality, corrected method)** — Behaves exactly like Method 2 in coverage
+
+-   Method 3 coverage matches Method 2 almost identically, which is expected because both derive from the same normal approximation.
+
+Examples:
+
+-   n = 10, α=0.10 → 0.9086 (Method 2) vs 0.9086 (Method 3)
+
+-   n = 30, α=0.05 → 0.9466 (Methods 2 & 3)
+
+-   n = 100, α=0.05 → 0.9516 (both methods)
+
+The one place where Method 3 fails is when n≤z1−α/2
+
+This happens only when (n=5, α=0.01), and Method 3 produced no intervals at all, giving coverage = 0.
+In this case the CI simply cannot exist.
+
+**Method 4** — Slight undercoverage for small n, accurate for larger n
+
+-   For n=5: coverage ranges 0.83–0.89 (slightly below the target).
+
+-   For n=10: coverage improves to \~0.90–0.95.
+
+-   For n ≥ 30: coverage stabilizes and closely matches the nominal level.
+
+This matches the theory that the t-approximation only becomes accurate when sample size is moderate.
+
+```{r}
+plot_ci_lengths <- function(n, alpha) {
+  m_reps <- m_vals[length(m_vals)]
+  lengths <- matrix(NA, nrow = m_reps, ncol = 4)
+  
+  for (m in 1:m_reps) {
+    x <- rexp(n, rate = lambda_true)
+    
+    lengths[m,1] <- diff(ci1_theta(x, alpha))
+    lengths[m,2] <- diff(ci2_theta(x, alpha, theta_true))
+    
+    tmp <- ci3_theta(x, alpha)
+    lengths[m,3] <- if (!any(is.na(tmp))) diff(tmp) else NA
+    
+    lengths[m,4] <- diff(ci4_theta(x, alpha))
+  }
+  
+  par(mfrow = c(2,2), oma = c(0, 0, 3, 0))
+
+  for (i in 1:4) {
+    hist(lengths[,i],
+         main = paste("Method", i),
+         xlab = "Interval length",
+         col = "lightgray")
+  }
+  
+  title_text <- paste("Histogram of CI Lengths  |  n =", n, ", alpha =", alpha)
+  mtext(title_text, outer = TRUE, cex = 1.4, font = 2)
+}
+
+
+plot_ci_lengths(10, 0.05)
+plot_ci_lengths(30, 0.05)
+plot_ci_lengths(100, 0.05)
+
+plot_ci_lengths(30, 0.1)
+plot_ci_lengths(30, 0.01)
+
+```
+
+## Analysis
+
+As the sample size increases, all four confidence interval methods become shorter and more stable.
+But their behavior differs significantly, especially for small samples.
+
+#### Method 1:
+
+It relies on the exact distribution of 2λnXˉ, which follows a chi-square distribution with 2n degrees of freedom.
+For Method 1 we use the fact that if X_i \~ Exp(λ), then sum(X_i) has a Gamma(n, λ) distribution, and therefore 2 λ sum(X_i) \~ χ²\_{2n}.
+Since mean(X) = sum(X_i)/n, this yields an exact confidence interval for θ = 1/λ.
+
+-   For every n, Method 1 produces moderately short intervals.
+
+-   The interval lengths are fairly stable and bell-shaped.
+
+-   For small samples (n=10), lengths are around 2–4.
+
+-   For n=100, they shrink to about 0.5–0.9.
+
+#### Method 2:
+
+It uses the normal approximation of Xˉ, assuming that the variance θ\^2 is known.
+
+-   Always produces a constant interval length (histogram is a single bar).
+
+-   The length decreases with larger n, but it does not adapt to sample variation.
+
+-   For small n the approximation is unreliable, often resulting in coverage slightly above the target level.
+
+This method is not reliable unless n is large.
+
+#### Method 3:
+
+It tries to solve the inequality from Method 2 for θ, so that the resulting interval no longer depends on the unknown parameter.
+This interval only exists if $1 - z / \sqrt{n} > 0$ = $$
+\sqrt{n} > z_{1 - \alpha/2}
+$$
+
+-   The intervals from Method 3 are usually a bit longer than those from Method 2, since the formula involves dividing by $1 \pm z / \sqrt{n}$ . Still, for moderate sample sizes the intervals behave normally.
+-   The only time Method 3 performs poorly is when n is very small and α is very small. In this case, the interval does not exist at all (for example, n=5, α=0.01).
+
+#### Method 4:
+
+Method 4 replaces the unknown variance with the sample standard deviation and uses a t-critical value.
+For small n, this introduces noticeable variability and undercoverage (around 0.83–0.89 for n=5).
+However, the method stabilizes quickly, and by n=30 its performance becomes close to the nominal level.Interval lengths are slightly wider than Method 2 or 3 for small n but become comparable for moderate sample sizes.
+
+## Which confidence interval method is best?
+
+Among the four confidence interval methods, the exact chi-square interval from the 1st method is the most reliable, based on both coverage and interval length.
+The reason is that this method is derived directly from the exact distribution of the statistic 2λn𝑋ˉ, which follows a chi-square distribution with 2n degrees of freedom for exponential data.
+Because this result is exact and does not rely on any approximations, the method produces intervals whose coverage probability is extremely close to the intended level, even when the sample size is very small.
+In addition, the interval lengths are fairly stable from sample to sample and not excessively wide.
+This makes Method 1 both accurate and efficient.
+
+Method 4 works well once the sample size is moderately large.
+
+In our simulations:
+
+-   For n=5, coverage is slightly too low (around 0.83–0.89 depending on α).
+
+-   For n = 10, coverage improves but is still slightly below the target.
+
+-   By n=30, coverage is very close to the nominal level.
+
+-   For n=100, Method 4 performs almost as well as the exact method.
+
+    This happens because the sample variance becomes much more stable once n is around 30 or higher.
+
+    So, Method 4 is a reasonable practical choice when n≥30.
+
+Both Method 2 and Method 3 come from the same normal approximation to the distribution of Xˉ.\
+They behave almost identically in the simulations:
+
+-   coverage is correct when n is moderate or large,
+
+-   coverage tends to be slightly above the target level when n is very small,
+
+-   interval lengths shrink correctly as n increases, Method 3 produces no interval when n is too small relative to α
+
+    Because Method 2 uses the true value of the parameter in the standard error, it is not realistic outside of simulations.
+    Method 3 removes θ from the formula, but it gives nearly the same coverage as Method 2 and produces slightly longer intervals.
+
+
+
+
+
+
 
 ```{r}
 team_id <- 1
