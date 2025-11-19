@@ -337,10 +337,6 @@ They behave almost identically in the simulations:
 
 
 
-```{r}
-team_id <- 1
-```
-
 # Part 2, Problem 3
 
 ```{r}
