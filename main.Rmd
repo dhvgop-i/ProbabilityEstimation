@@ -1,0 +1,102 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+team_id <- 1
+```
+
+# Part 2, Problem 3
+
+```{r}
+set.seed(team_id)
+
+mu <- 10
+sigma_squared <- 4
+sigma <- sqrt(sigma_squared)
+M <- 10000 # Number of repetitions to estimate Expectation
+sample_sizes <- c(10, 50, 100, 1000)
+
+results <- data.frame(
+  n = integer(),
+  Bias_n = double(),
+  Bias_n_minus_1 = double(),
+  Mean_Est_n = double(),
+  Mean_Est_n_minus_1 = double()
+)
+
+for (n in sample_sizes) {
+  # Generate M samples of size n
+  # Creates a matrix where each column is a sample of size n
+  samples <- matrix(rnorm(n * M, mean = mu, sd = sigma), nrow = n)
+  
+  means <- colMeans(samples)
+  
+  # Calculate sum of squared deviations for each column (S_xx)
+  # sweep subtracts the column means from the matrix
+  deviations <- sweep(samples, 2, means, "-")
+  S_xx <- colSums(deviations^2)
+  
+  est_n <- S_xx / n           # Biased estimator
+  est_n_1 <- S_xx / (n - 1)   # Unbiased estimator
+  
+  # Calculate Empirical Bias
+  bias_n <- mean(est_n) - sigma_squared
+  bias_n_1 <- mean(est_n_1) - sigma_squared
+  
+  results <- rbind(results, data.frame(
+    n = n,
+    Bias_n = bias_n,
+    Bias_n_minus_1 = bias_n_1,
+    Mean_Est_n = mean(est_n),
+    Mean_Est_n_minus_1 = mean(est_n_1)
+  ))
+}
+
+print(results)
+
+# Visualization of Bias Convergence
+barplot(
+  rbind(results$Bias_n, results$Bias_n_minus_1), 
+  beside = TRUE, 
+  names.arg = results$n, 
+  col = c("red", "green"), 
+  legend.text = c("Biased (1/n)", "Unbiased (1/n-1)"),
+  main = "Bias of Variance Estimators vs Sample Size",
+  xlab = "Sample Size (n)",
+  ylab = "Bias"
+)
+```
+## task d)
+For small n (like 10):
+  The bias of $ \sigma_{n}^2 $ is significant and negative (approximately −0.4 for $\sigma^{2}=4$). This aligns with the theoretical bias $ -\frac{\sigma^2}{n} = -0.4$
+  The bias of $ \sigma_{n-1}^{2} $ is extremely close to 0
+
+For large n (like 1000):
+  The bias of $ \sigma_{n}^2 $ shrinks towards 0 (approx −0.004).
+  Both estimators yield values very close to the population variance.
+
+The estimator $ \sigma_{n-1}^{2} $ consistently provides an estimate centered around the true parameter $\sigma^{2}=4$ regardless of sample size. The estimator $ \sigma_{n}^2 $ systematically underestimates the variance. This underestimation is most severe at small sample sizes but becomes negligible as n increases.
+
+## task e-f
+First we need to calculate the the sum of squared deviations $ S_{xx} = \sum_{i=1}^{n}{(X_i-\overline{X})^2}$
+We know that $\sum(X_i - \overline{X})^2 = \sum{X_i^2} - n \overline{X}^2$, and given properties of expectation and variance we get:
+$$
+1. E(X_i^2) = \sigma^2 + \mu^2
+$$
+$$
+2. E(X_i^2) = Var(\overline{X} + (E(\overline{X}))^2) = \frac{\sigma^2}{n} + \mu^2
+$$
+So, substituting it into expectation of the $S_{xx}$ we get:
+$$
+E(S_{xx}) = \sum_{i=1}^{n}{E(X_i^2)} - nE(\overline{X}^2) = n(\sigma^2+\mu^2) - n(\frac{\sigma^2}{n} + \mu^2) = (n-1)\sigma^2
+$$
+So, we can substitute it into formula of $E(\sigma_n^2)$ and $E(\sigma_{n-1}^2)$ and we will get that $E(\sigma_n^2) = \sigma^2 - \frac{\sigma^2}{n}$ and $E(\sigma_{n-1}^2) = \sigma^2$.
+
+So $\sigma_{n-1}^2)$ is unbiased estimator as $E(\hat\theta) = \theta$ and $\sigma_n^2$ is a biased estimator as the equation mentioned previously doesn't hold for it.
+
+## task g
+The theoretical derivation confirms that using n in the denominator leads to a biased estimate because it does not account for the fact that the sample mean $\overline{X}$ minimizes the sum of squared deviations for that specific sample, making the spread appear smaller than it is relative to the true population mean $\mu$. Also it is important to use $\sigma_{n-1}^2$ estimator for small datasets as it doesnot give any error, but for large dataset it doesn't matter wether you use $\sigma_{n-1}^2$ or $\sigma_{n}^2$ as $E(\sigma_{n}^2) \rightarrow \sigma^2$ as $n \rightarrow \infty$, meaning it it asymptotically unbiased.
